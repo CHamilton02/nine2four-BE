@@ -1,18 +1,27 @@
+from fastapi import FastAPI, UploadFile, HTTPException
+from http.client import HTTPException
+from pydantic import BaseModel
 import io
+import string
 import pymupdf
-from fastapi import FastAPI, UploadFile
 import re
 
 app = FastAPI()
+
+class CourseInfo(BaseModel):
+    course_code: str
+    grade: str
+    weight: str
 
 @app.get("/")
 def read_root():
     return {"message": "Camdyn says hi! :)"}
 
-@app.post("/read-pdf/")
-async def read_pdf_file(file: UploadFile):
+@app.post("/parse-course-info/")
+async def parse_course_info(file: UploadFile) -> list[CourseInfo]:
     try:
         course_grade_dict = dict()
+        course_grades = []
         pdf_bytes = await file.read()
         pdf_file = io.BytesIO(pdf_bytes)
 
@@ -26,26 +35,27 @@ async def read_pdf_file(file: UploadFile):
                     course_code = extract_course_code(lines[page_line + 1])
                     course_weight = extract_course_weight(lines[page_line + 1])
                     course_grade_dict[course_code] = [lines[page_line + 3], course_weight]
+                    course_grades.append(CourseInfo(course_code=course_code, grade=lines[page_line + 3], weight=course_weight))
                 page_line += 1
 
-        print(course_grade_dict)
+        return course_grades
 
     except Exception as e:
-        return {"error": f"Error processing PDF: {e}"}
+        raise HTTPException(status_code=500, detail=e)
 
-def check_if_session_text(text):
+def check_if_session_text(text) -> string:
     session_pattern = re.compile(r"(FW|SU)\d{2}", re.IGNORECASE)
     return session_pattern.match(text)
 
-def check_if_grade_exists(text):
+def check_if_grade_exists(text) -> string:
     grade_pattern = re.compile(r"[A-F]{1}[+]*", re.IGNORECASE)
     return grade_pattern.match(text)
 
-def extract_course_code(text):
+def extract_course_code(text) -> string:
     course_code_pattern = re.compile(r"[A-Z]{2}\s[A-Z]+\s+\d{4}", re.IGNORECASE)
     return course_code_pattern.match(text).group(0)
 
-def extract_course_weight(text):
+def extract_course_weight(text) -> string:
     course_code_pattern = re.compile(r"[A-Z]{2}\s[A-Z]+\s+\d{4}", re.IGNORECASE)
     course_weight_pattern = re.compile(r"\d\.\d{2}")
     course_weight = course_code_pattern.split(text)[1].strip()
